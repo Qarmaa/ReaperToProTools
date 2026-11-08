@@ -112,6 +112,9 @@
 - Сборка: `APP_VERSION=<выше опубликованной> bash gui/build_app.sh` → `gui/build/Reaper to Pro Tools.app`.
 - Установка: закрыть приложение, заменить `/Applications/Reaper to Pro Tools.app`, скопировать `Contents/Resources/ReaperExtension/*.dylib`
   в `~/Library/Application Support/REAPER/UserPlugins/`, попросить перезапустить Reaper.
+- Код — на GitHub (публичный https://github.com/Qarmaa/ReaperToProTools; автор коммитов — noreply-адрес). Обновления — релизы GitHub
+  (`release.sh` -> `gh release create`, приложение читает …/releases/latest/download/latest.json); Яндекс.Диск — только переходный период (YADISK=0 — выключить).
+  Перед коммитом: не добавлять названия проектов пользователя, личные пути и разборы сторонних продуктов (docs/research и regress/ — в .gitignore).
 - Публикация — только по команде пользователя («опубликуй/выложи»), заметки ≤5 пунктов, ~800 символов.
 - Reaper-проверки — только в песочнице `ptx_tools/sandbox_reaper.sh` (`-newinst -cfgfile /tmp/mt/rcfg/reaper.ini`), не в Reaper пользователя.
 - Тестовые сессии Reaper → PT из больших проектов собирать с `--link` (без копий аудио): копии 7687 клипов заполнили системный диск,
