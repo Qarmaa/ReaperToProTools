@@ -1,0 +1,14 @@
+# сборка
+__pycache__/
+*.pyc
+.DS_Store
+gui/build/
+gui/release/out/
+gui/release/sign
+vst3host/build/
+reaper_ext/out/
+graphify-out/
+# личное: журнал исследований (названия проектов пользователя, разборы сторонних продуктов) и список сессий для регрессии
+docs/research/
+regress/sessions.txt
+regress/*.json
