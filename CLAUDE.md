@@ -110,7 +110,8 @@
 
 ## Сборка, установка, проверка
 
-- Сборка: `APP_VERSION=<выше опубликованной> bash gui/build_app.sh` → `gui/build/Reaper to Pro Tools.app`.
+- Сборка: `APP_VERSION=<номер последнего опубликованного выпуска> bash gui/build_app.sh` → `gui/build/Reaper to Pro Tools.app`.
+  Новый номер версии — ТОЛЬКО по команде пользователя (не на каждое изменение).
 - Установка: закрыть приложение, заменить `/Applications/Reaper to Pro Tools.app`, скопировать `Contents/Resources/ReaperExtension/*.dylib`
   в `~/Library/Application Support/REAPER/UserPlugins/`, попросить перезапустить Reaper.
 - Код — на GitHub (публичный https://github.com/Qarmaa/ReaperToProTools; автор коммитов — noreply-адрес). Обновления — релизы GitHub
