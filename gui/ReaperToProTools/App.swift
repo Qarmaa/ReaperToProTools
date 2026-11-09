@@ -365,7 +365,7 @@ struct TracksCard: View {
     static let width: CGFloat = 340
     let tracks: [TrackRow]
     @Binding var selected: Set<Int>?
-    @State private var collapsed: Set<Int> = []
+    @State private var expanded: Set<Int> = []          // папки по умолчанию свёрнуты: храним раскрытые
     @State private var query = ""
     @State private var hiddenGroups: Set<String> = []
 
@@ -403,7 +403,7 @@ struct TracksCard: View {
         var out: [TrackRow] = [], hideBelow: Int? = nil
         for t in tracks {
             if let d = hideBelow { if t.depth > d { continue } else { hideBelow = nil } }
-            if query.isEmpty && collapsed.contains(t.index) { hideBelow = t.depth }      // при поиске свёрнутые папки не прячут найденное
+            if query.isEmpty && Self.kindGroup(t.kind) == "folder" && !expanded.contains(t.index) { hideBelow = t.depth }      // при поиске свёрнутые папки не прячут найденное
             let okName = query.isEmpty || t.name.localizedCaseInsensitiveContains(query)
             if okName && hiddenGroups.isDisjoint(with: groups(t)) { out.append(t) }
         }
@@ -431,8 +431,8 @@ struct TracksCard: View {
                     }
                     .menuStyle(.borderlessButton).fixedSize().help("Show tracks by state and type")
                     if tracks.contains(where: { Self.kindGroup($0.kind) == "folder" }) {
-                        Button(collapsed.isEmpty ? "Collapse All" : "Expand All") {
-                            collapsed = collapsed.isEmpty ? Set(tracks.filter { Self.kindGroup($0.kind) == "folder" }.map(\.index)) : []
+                        Button(expanded.isEmpty ? "Expand All" : "Collapse All") {
+                            expanded = expanded.isEmpty ? Set(tracks.filter { Self.kindGroup($0.kind) == "folder" }.map(\.index)) : []
                         }
                         .controlSize(.small)
                     }
@@ -462,15 +462,15 @@ struct TracksCard: View {
         let kids = folder ? descendants(t.index) : []
         let dim = t.inactive == true || t.hidden == true
         return HStack(spacing: 6) {
-            Color.clear.frame(width: CGFloat(t.depth) * 14, height: 1)
+            Color.clear.frame(width: CGFloat(t.depth) * 16, height: 1)
             if folder && !kids.isEmpty {
-                Button { if collapsed.contains(t.index) { collapsed.remove(t.index) } else { collapsed.insert(t.index) } } label: {
-                    Image(systemName: "chevron.right").rotationEffect(.degrees(collapsed.contains(t.index) ? 0 : 90))
-                        .font(.system(size: 9, weight: .semibold)).frame(width: 10)
+                Button { if expanded.contains(t.index) { expanded.remove(t.index) } else { expanded.insert(t.index) } } label: {
+                    Image(systemName: "chevron.right").rotationEffect(.degrees(expanded.contains(t.index) ? 90 : 0))
+                        .font(.system(size: 11, weight: .semibold)).frame(width: 12)
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             } else {
-                Color.clear.frame(width: 10, height: 1)
+                Color.clear.frame(width: 12, height: 1)
             }
             Toggle("", isOn: Binding(get: { sel.contains(t.index) }, set: { on in
                 var s = sel
@@ -480,13 +480,13 @@ struct TracksCard: View {
             RoundedRectangle(cornerRadius: 3)
                 .fill(t.color.map { Color(red: Double($0 >> 16 & 255) / 255, green: Double($0 >> 8 & 255) / 255, blue: Double($0 & 255) / 255) } ?? Color.clear)
                 .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.15)))
-                .frame(width: 10, height: 10)
-            Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                .frame(width: 13, height: 13)
+            Text(t.name).font(.system(size: 14)).lineLimit(1).truncationMode(.middle)
                 .foregroundStyle(dim ? Color.secondary : Color.primary)
             Spacer()
-            Text(detail(t, folder: folder, kids: kids.count)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            Text(detail(t, folder: folder, kids: kids.count)).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.vertical, 3).padding(.horizontal, 4)
+        .padding(.vertical, 5).padding(.horizontal, 4)
         .contentShape(Rectangle())
     }
 
@@ -553,7 +553,7 @@ struct ContentView: View {
                 footer
             }
             .frame(width: 424)
-            TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks)
+            TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks).id(m.rppURL)   // новый файл — фильтр и раскрытые папки с нуля
         }
         .fixedSize(horizontal: false, vertical: true)      // высоту задаёт левая колонка, список дорожек растягивается до неё
         .onAppear {
@@ -1599,7 +1599,7 @@ struct ReverseView: View {
             }
         }
         .frame(width: 424)
-        TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks)
+        TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks).id(m.ptxURL)   // новый файл — фильтр и раскрытые папки с нуля
         }
         .fixedSize(horizontal: false, vertical: true)      // высоту задаёт левая колонка, список дорожек растягивается до неё
         .sheet(isPresented: $showLog) { LogSheet(text: m.log, close: { showLog = false }) }
