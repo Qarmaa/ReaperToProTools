@@ -464,13 +464,14 @@ struct TracksCard: View {
         return HStack(spacing: 6) {
             Color.clear.frame(width: CGFloat(t.depth) * 16, height: 1)
             if folder && !kids.isEmpty {
-                Button { if expanded.contains(t.index) { expanded.remove(t.index) } else { expanded.insert(t.index) } } label: {
+                Button { toggleExpanded(t.index) } label: {
                     Image(systemName: "chevron.right").rotationEffect(.degrees(expanded.contains(t.index) ? 90 : 0))
-                        .font(.system(size: 11, weight: .semibold)).frame(width: 12)
+                        .font(.system(size: 11, weight: .semibold)).frame(width: 24, height: 24)
+                        .contentShape(Rectangle())                       // нажимается весь квадрат, а не только значок
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
             } else {
-                Color.clear.frame(width: 12, height: 1)
+                Color.clear.frame(width: 24, height: 1)
             }
             Toggle("", isOn: Binding(get: { sel.contains(t.index) }, set: { on in
                 var s = sel
@@ -486,9 +487,12 @@ struct TracksCard: View {
             Spacer()
             Text(detail(t, folder: folder, kids: kids.count)).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
         }
-        .padding(.vertical, 5).padding(.horizontal, 4)
+        .padding(.vertical, 2).padding(.horizontal, 4)
         .contentShape(Rectangle())
+        .onTapGesture { if folder && !kids.isEmpty { toggleExpanded(t.index) } }   // клик по строке папки тоже раскрывает её
     }
+
+    func toggleExpanded(_ i: Int) { if expanded.contains(i) { expanded.remove(i) } else { expanded.insert(i) } }
 
     func detail(_ t: TrackRow, folder: Bool, kids: Int) -> String {
         var parts = [folder ? "folder · \(kids)" : (t.clips > 0 ? "\(t.kind) · \(t.clips) clip\(t.clips == 1 ? "" : "s")" : t.kind)]
