@@ -1622,7 +1622,7 @@ def convert(ptx_path, out_path=None, media_dirs=(), info=False, alt_playlists=Tr
               'missing_detail': [dict(path=f, name=os.path.basename(f), seconds=need.get(f, 0.0)) for f in sorted(missing, key=lambda x: os.path.basename(x).lower())],
               'track_list': [dict(index=i_, name=t_['name'], kind={'audio': 'audio', 'folder': 'folder', 'routing': 'routing'}.get(t_['kind']) or KIND_NAMES.get(t_['ctype'], 'track'),
                                   depth=t_['depth'], clips=sum(1 for e_ in pl_events.get(t_['name'], []) if e_[1] == 3 and e_[2] < len(regions) and regions[e_[2]] is not None) if t_['kind'] == 'audio' else 0,
-                                  inactive=bool(t_['state'].get('inactive')), hidden=bool(t_['state'].get('hidden')), frozen=bool(t_['state'].get('frozen')), automation=bool((by_pt_.get(i_) or {}).get('auto') or (by_pt_.get(i_) or {}).get('pan_auto') or (by_pt_.get(i_) or {}).get('mute_auto')),
+                                  inactive=bool(t_['state'].get('inactive')), hidden=bool(t_['state'].get('hidden')), frozen=bool(t_['state'].get('frozen')), color=t_['state'].get('color'), automation=bool((by_pt_.get(i_) or {}).get('auto') or (by_pt_.get(i_) or {}).get('pan_auto') or (by_pt_.get(i_) or {}).get('mute_auto')),
                                   markers=sum(1 for m_ in track_markers if m_['track'] == i_))
                              for i_, t_ in enumerate(structure)],
               'video_tracks': sum(1 for t in structure if t['ctype'] == 0x2623), 'bits': _guess_bits(cache)}

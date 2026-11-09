@@ -870,6 +870,9 @@ def convert(rpp_path, out_dir, name=None, templates_dir=None, media_dirs=(), off
             split_clips=getattr(pr, 'split_clips', 0),
             pt_tracks=sum(track_weights(pr, usable).values()),
             sessions=len(plan_parts(pr, track_weights(pr, usable)) or [0]),
+            track_list=[dict(index=i, name=t.name, color=t.color if t.color >= 0 else None, depth=t.depth,
+                             kind='folder' if t.folder else (t.pt_tag[0] if t.pt_tag else 'audio'),
+                             clips=sum(1 for it in audio if it.track == i), mute=t.mute) for i, t in enumerate(pr.tracks)],
             missing_files=result['missing'],
             missing_detail=missing_detail(skipped.get('file not found', [])),
             video=dict(tracks=len({it.track for it in video}), clips=len(video),
@@ -1399,7 +1402,9 @@ def main():
     ap.add_argument('--search', action='append', default=[], help='папка поиска кандидатов')
     ap.add_argument('--no-placeholders', action='store_true', help='skip clips whose audio file is missing')
     ap.add_argument('--info', action='store_true')
+    ap.add_argument('--tracks', default='', help='индексы переносимых дорожек Reaper через запятую (порядок проекта, с 0); по умолчанию все')
     a = ap.parse_args()
+    sel = {int(x) for x in a.tracks.split(',') if x.strip().isdigit()} if a.tracks.strip() else None
     overrides = json.load(open(a.relink, encoding='utf-8')) if a.relink else None
     if a.candidates:
         print(json.dumps(find_candidates(a.rpp, a.search, overrides), ensure_ascii=False))
@@ -1413,8 +1418,12 @@ def main():
     if not a.info:
         print('Reading project: 0/1', flush=True)
     parts, total = (None, 0) if a.info else plan_sessions(a.rpp, a.media_dir, overrides, show_progress=True)
+    if parts is not None and sel is not None:                  # выбранные дорожки — внутри своих частей
+        parts = [sorted(set(p_) & sel) for p_ in parts if set(p_) & sel]
+        parts = parts if len(parts) > 1 else None
     if parts is None:
-        r = convert(a.rpp, a.out, a.name, a.templates, a.media_dir, a.offset, not a.no_fades, a.info, **kw)
+        r = convert(a.rpp, a.out, a.name, a.templates, a.media_dir, a.offset, not a.no_fades, a.info,
+                    keep_tracks=None if a.info else sel, **kw)
         if a.info:
             print(json.dumps(r, ensure_ascii=False))
         else:

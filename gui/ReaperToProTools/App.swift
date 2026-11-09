@@ -32,6 +32,20 @@ struct CandidateResult: Decodable {
     let candidates: [String: [Candidate]]
 }
 
+/// Дорожка из `--info` (track_list): для выбора, что переносить.
+struct TrackRow: Decodable, Identifiable, Hashable {
+    let index: Int
+    let name: String
+    let kind: String
+    let depth: Int
+    let clips: Int
+    let color: Int?                // 0xRRGGBB или nil
+    let hidden: Bool?
+    let inactive: Bool?
+    let frozen: Bool?
+    var id: Int { index }
+}
+
 struct ProjectInfo: Decodable {
     struct Video: Decodable { let tracks: Int; let clips: Int; let files: Int; let missing: Int? }
 
@@ -55,6 +69,7 @@ struct ProjectInfo: Decodable {
     let missing_files: [String]
     let missing_detail: [MissingFile]
     let video: Video
+    let track_list: [TrackRow]?
 }
 
 enum Phase { case idle, converting, done, failed }
@@ -107,6 +122,8 @@ final class Model: ObservableObject {
         return customDir
     }
     @Published var projectName = ""
+    /// Выбранные дорожки (индексы проекта); nil — все.
+    @Published var selectedTracks: Set<Int>?
 
     @Published var phase: Phase = .idle
     @Published var progress: Double = 0
@@ -138,6 +155,7 @@ final class Model: ObservableObject {
     func load(_ url: URL) {
         rppURL = url
         relinkMap = [:]
+        selectedTracks = nil
         projectName = url.deletingPathExtension().lastPathComponent
         phase = .idle
         status = ""
@@ -188,7 +206,7 @@ final class Model: ObservableObject {
     }
 
     var canConvert: Bool {
-        info != nil && phase != .converting && !projectName.trimmingCharacters(in: .whitespaces).isEmpty
+        info != nil && phase != .converting && !projectName.trimmingCharacters(in: .whitespaces).isEmpty && selectedTracks?.isEmpty != true
     }
 
     func convert() {
@@ -213,6 +231,7 @@ final class Model: ObservableObject {
         if !xLanes { args.append("--no-lanes") }
         if !xVideo { args.append("--no-video") }
         if !xGroups { args.append("--no-groups") }
+        if let t = selectedTracks { args += ["--tracks", t.sorted().map(String.init).joined(separator: ",")] }
         args += relinkArgs()
 
         phase = .converting
@@ -340,6 +359,146 @@ struct TransferButton<Content: View>: View {
     }
 }
 
+/// Карточка «Tracks» (после Preflight): что переносить. Фильтр по имени и по состоянию / типу (как в расширении Reaper),
+/// папки сворачиваются, галочка папки включает и выключает всё её содержимое; All / None — для показанных. selected == nil — все дорожки.
+struct TracksCard: View {
+    static let width: CGFloat = 340
+    let tracks: [TrackRow]
+    @Binding var selected: Set<Int>?
+    @State private var collapsed: Set<Int> = []
+    @State private var query = ""
+    @State private var hiddenGroups: Set<String> = []
+
+    var sel: Set<Int> { selected ?? Set(tracks.map(\.index)) }
+    func setSel(_ s: Set<Int>) { selected = s.count == tracks.count ? nil : s }
+
+    static func kindGroup(_ k: String) -> String {
+        switch k.lowercased() {
+        case "folder", "routing": return "folder"
+        case "audio", "aux", "vca", "video": return k.lowercased()
+        default: return "other"
+        }
+    }
+    static let groupTitles: [(String, String)] = [("inactive", "Inactive Tracks"), ("hidden", "Hidden Tracks"), ("frozen", "Frozen Tracks"), ("noclips", "Tracks without Clips"),
+                                                   ("folder", "Folder Tracks"), ("audio", "Audio Tracks"), ("aux", "Aux Inputs"), ("vca", "VCA Masters"), ("video", "Video Tracks"), ("other", "Other Tracks")]
+
+    func groups(_ t: TrackRow) -> [String] {
+        var g = [Self.kindGroup(t.kind)]
+        if t.inactive == true { g.append("inactive") }
+        if t.hidden == true { g.append("hidden") }
+        if t.frozen == true { g.append("frozen") }
+        if t.clips == 0 && g[0] != "folder" { g.append("noclips") }
+        return g
+    }
+    /// Пункты меню фильтра — только те, что встречаются в этой сессии.
+    var presentGroups: [(String, String)] { let have = Set(tracks.flatMap(groups)); return Self.groupTitles.filter { have.contains($0.0) } }
+    var filterActive: Bool { !query.isEmpty || !hiddenGroups.isEmpty }
+
+    /// Содержимое папки: следующие дорожки глубже неё.
+    func descendants(_ i: Int) -> [Int] {
+        guard let p = tracks.firstIndex(where: { $0.index == i }) else { return [] }
+        return tracks[(p + 1)...].prefix { $0.depth > tracks[p].depth }.map(\.index)
+    }
+    var visible: [TrackRow] {
+        var out: [TrackRow] = [], hideBelow: Int? = nil
+        for t in tracks {
+            if let d = hideBelow { if t.depth > d { continue } else { hideBelow = nil } }
+            if query.isEmpty && collapsed.contains(t.index) { hideBelow = t.depth }      // при поиске свёрнутые папки не прячут найденное
+            let okName = query.isEmpty || t.name.localizedCaseInsensitiveContains(query)
+            if okName && hiddenGroups.isDisjoint(with: groups(t)) { out.append(t) }
+        }
+        return out
+    }
+
+    var body: some View {
+        Card(title: "Tracks") {
+            if tracks.isEmpty {
+                Detail(text: "—")
+                Spacer(minLength: 0)
+            } else {
+                let shown = visible
+                HStack(spacing: 8) {
+                    TextField("Filter", text: $query).textFieldStyle(.roundedBorder).controlSize(.small)
+                    Menu {
+                        ForEach(presentGroups, id: \.0) { g in
+                            Toggle(g.1, isOn: Binding(get: { !hiddenGroups.contains(g.0) },
+                                                      set: { if $0 { hiddenGroups.remove(g.0) } else { hiddenGroups.insert(g.0) } }))
+                        }
+                        Divider()
+                        Button("Show All") { hiddenGroups = []; query = "" }
+                    } label: {
+                        Image(systemName: filterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                    .menuStyle(.borderlessButton).fixedSize().help("Show tracks by state and type")
+                    if tracks.contains(where: { Self.kindGroup($0.kind) == "folder" }) {
+                        Button(collapsed.isEmpty ? "Collapse All" : "Expand All") {
+                            collapsed = collapsed.isEmpty ? Set(tracks.filter { Self.kindGroup($0.kind) == "folder" }.map(\.index)) : []
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(shown) { t in row(t); Divider() }
+                    }
+                }
+                .frame(minHeight: 120, idealHeight: 120, maxHeight: .infinity)   // маленькая «идеальная» высота: окно не растёт от длинного списка
+                .overlay { if shown.isEmpty { Detail(text: "No tracks match the filter.") } }
+                HStack {
+                    Button("All") { setSel(sel.union(shown.map(\.index))) }.controlSize(.small)
+                    Button("None") { setSel(sel.subtracting(shown.map(\.index))) }.controlSize(.small)
+                    Spacer()
+                    Text("\(sel.count) of \(tracks.count)" + (shown.count != tracks.count ? " · \(shown.count) shown" : ""))
+                        .font(.system(size: 11)).foregroundStyle(sel.isEmpty ? Color.red : Color.secondary)
+                }
+            }
+        }
+        .frame(width: Self.width)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    func row(_ t: TrackRow) -> some View {
+        let folder = Self.kindGroup(t.kind) == "folder"
+        let kids = folder ? descendants(t.index) : []
+        let dim = t.inactive == true || t.hidden == true
+        return HStack(spacing: 6) {
+            Color.clear.frame(width: CGFloat(t.depth) * 14, height: 1)
+            if folder && !kids.isEmpty {
+                Button { if collapsed.contains(t.index) { collapsed.remove(t.index) } else { collapsed.insert(t.index) } } label: {
+                    Image(systemName: "chevron.right").rotationEffect(.degrees(collapsed.contains(t.index) ? 0 : 90))
+                        .font(.system(size: 9, weight: .semibold)).frame(width: 10)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+            } else {
+                Color.clear.frame(width: 10, height: 1)
+            }
+            Toggle("", isOn: Binding(get: { sel.contains(t.index) }, set: { on in
+                var s = sel
+                for i in [t.index] + kids { if on { s.insert(i) } else { s.remove(i) } }
+                setSel(s)
+            })).toggleStyle(.checkbox).labelsHidden()
+            RoundedRectangle(cornerRadius: 3)
+                .fill(t.color.map { Color(red: Double($0 >> 16 & 255) / 255, green: Double($0 >> 8 & 255) / 255, blue: Double($0 & 255) / 255) } ?? Color.clear)
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.primary.opacity(0.15)))
+                .frame(width: 10, height: 10)
+            Text(t.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                .foregroundStyle(dim ? Color.secondary : Color.primary)
+            Spacer()
+            Text(detail(t, folder: folder, kids: kids.count)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+        }
+        .padding(.vertical, 3).padding(.horizontal, 4)
+        .contentShape(Rectangle())
+    }
+
+    func detail(_ t: TrackRow, folder: Bool, kids: Int) -> String {
+        var parts = [folder ? "folder · \(kids)" : (t.clips > 0 ? "\(t.kind) · \(t.clips) clip\(t.clips == 1 ? "" : "s")" : t.kind)]
+        if t.inactive == true { parts.append("inactive") }
+        if t.hidden == true { parts.append("hidden") }
+        if t.frozen == true { parts.append("frozen") }
+        return parts.joined(separator: " · ")
+    }
+}
+
 /// Если результат уже существует — спрашивает: заменить (старый уходит в Корзину), создать с другим именем или отмена.
 /// Возвращает итоговое имя или nil при отмене.
 @MainActor
@@ -386,12 +545,17 @@ struct ContentView: View {
     @State private var showRelink = false
 
     var body: some View {
-        VStack(spacing: 14) {
-            inputCard
-            preflightCard
-            outputCard
-            footer
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 14) {
+                inputCard
+                preflightCard
+                outputCard
+                footer
+            }
+            .frame(width: 424)
+            TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks)
         }
+        .fixedSize(horizontal: false, vertical: true)      // высоту задаёт левая колонка, список дорожек растягивается до неё
         .onAppear {
             if ProcessInfo.processInfo.environment["RTP_RELINK"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showRelink = true }
@@ -995,7 +1159,7 @@ struct LogSheet: View {
 func scheduleSnapshot() {
     guard let path = ProcessInfo.processInfo.environment["RTP_SNAPSHOT"] else { return }
 
-    DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["RTP_RELINK"] != nil ? 6 : 3)) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + (ProcessInfo.processInfo.environment["RTP_TRACKS"] != nil ? 12 : ProcessInfo.processInfo.environment["RTP_RELINK"] != nil ? 6 : 3)) {
         let main = NSApp.windows.first(where: { $0.isVisible && !$0.isSheet })
         let sheet = main?.attachedSheet ?? NSApp.windows.first(where: { $0.isSheet && $0.isVisible })
         let pop = ProcessInfo.processInfo.environment["RTP_POPOVER"] != nil ? NSApp.windows.first(where: { $0.isVisible && String(describing: type(of: $0)).contains("Popover") }) : nil
@@ -1006,7 +1170,7 @@ func scheduleSnapshot() {
                 try? png.write(to: URL(fileURLWithPath: path))
             }
         }
-        NSApp.terminate(nil)
+        exit(0)                                   // terminate не срабатывает, пока открыт лист
     }
 }
 
@@ -1047,6 +1211,7 @@ struct PtxInfo: Decodable {
     let video_files: Int?
     let plugins: Int?
     let sends: Int?
+    let track_list: [TrackRow]?
 
     /// «48000 Hz, 24-bit, 25 fps, start 00:58:30»
     var rateLine: String {
@@ -1106,6 +1271,8 @@ final class ReverseModel: ObservableObject {
         return customDir
     }
     @Published var projectName = ""
+    /// Выбранные дорожки (индексы сессии); nil — все.
+    @Published var selectedTracks: Set<Int>?
     @Published var phase: Phase = .idle
     @Published var progress: Double = 0
     @Published var status = ""
@@ -1127,7 +1294,7 @@ final class ReverseModel: ObservableObject {
         return copyMedia ? outputDir.appendingPathComponent(n).appendingPathComponent(n + ".rpp")   // проект в своей папке + Media
                          : outputDir.appendingPathComponent(n + ".rpp")
     }
-    var canConvert: Bool { info != nil && phase != .converting && !projectName.trimmingCharacters(in: .whitespaces).isEmpty }
+    var canConvert: Bool { info != nil && phase != .converting && !projectName.trimmingCharacters(in: .whitespaces).isEmpty && selectedTracks?.isEmpty != true }
 
     func dirArgs() -> [String] {
         var a = searchDirs.flatMap { ["--media-dir", $0.path] }
@@ -1142,6 +1309,7 @@ final class ReverseModel: ObservableObject {
     func load(_ url: URL) {
         ptxURL = url
         relinkMap = [:]
+        selectedTracks = nil
         projectName = url.deletingPathExtension().lastPathComponent
         phase = .idle
         status = ""
@@ -1203,6 +1371,7 @@ final class ReverseModel: ObservableObject {
         let onKeys = ["skip_hidden", "skip_inactive", "trim_overlap"].filter { on($0) }
         if !onKeys.isEmpty { a += ["--on", onKeys.joined(separator: ",")] }
         if !on("playlists") { a.append("--no-alt-playlists") } else if !altAsLanes { a.append("--alt-as-tracks") }
+        if let t = selectedTracks { a += ["--tracks", t.sorted().map(String.init).joined(separator: ",")] }
         return a
     }
 
@@ -1285,6 +1454,7 @@ struct ReverseView: View {
     @State private var showAuto = false
 
     var body: some View {
+        HStack(alignment: .top, spacing: 14) {
         VStack(spacing: 14) {
             Card(title: "Input") {
                 HStack {
@@ -1379,7 +1549,7 @@ struct ReverseView: View {
                         }
                     }
                 }
-                Button("Plug-in library…") { showFXLib = true }.buttonStyle(.link).font(.system(size: 11))
+                    Button("Plug-in library…") { showFXLib = true }.buttonStyle(.link).font(.system(size: 11))
                 Picker("", selection: $m.copyMedia) {
                     Text("Link to source").tag(false)
                     Text("Copy Media (Standalone)").tag(true)
@@ -1428,6 +1598,10 @@ struct ReverseView: View {
                 }
             }
         }
+        .frame(width: 424)
+        TracksCard(tracks: m.info?.track_list ?? [], selected: $m.selectedTracks)
+        }
+        .fixedSize(horizontal: false, vertical: true)      // высоту задаёт левая колонка, список дорожек растягивается до неё
         .sheet(isPresented: $showLog) { LogSheet(text: m.log, close: { showLog = false }) }
         .sheet(isPresented: $showFXLib) { FXLibrarySheet(python: m.python, toolsDir: (m.script as NSString).deletingLastPathComponent, close: { showFXLib = false }) }
         .sheet(isPresented: $showRelink) {
@@ -1551,7 +1725,7 @@ struct RootView: View {
             }
         }
         .padding(18)
-        .frame(width: 460)
+        .frame(width: r.mode == .none ? 460 : 460 + 14 + TracksCard.width)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay {
             if dropTargeted {

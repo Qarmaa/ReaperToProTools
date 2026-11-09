@@ -98,7 +98,8 @@
 
 ## Приложение (`App.swift`)
 
-`Model` (Reaper→PT, `reaper_to_ptx.py`), `ReverseModel` (PT→Reaper, `ptx_to_reaper.py`), `RelinkSheet`, `FXLibrarySheet` (`reaper_fx.py`),
+`Model` (Reaper→PT, `reaper_to_ptx.py`), `ReverseModel` (PT→Reaper, `ptx_to_reaper.py`); окно в две колонки: слева Input / Preflight / Output,
+справа `TracksCard` (выбор дорожек из `track_list` в `--info`: фильтр, меню фильтра, свёртка папок, цвета; `selectedTracks` -> `--tracks`), `RelinkSheet`, `FXLibrarySheet` (`reaper_fx.py`),
 `PTLibrarySheet` (`ptx_plugin_learn.py`, кнопка Scan → `ptx_plugin_scan.py --scan`), `ReaperExtension` (установка dylib в UserPlugins), `Router`/`RootView`.
 Опции GUI → флаги CLI (`--no-*`, `--off/--on`).
 
